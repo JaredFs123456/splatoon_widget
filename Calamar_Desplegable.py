@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtCore import Qt, QEvent, QPoint
+from PySide6.QtCore import Qt, QEvent, QPoint, QSize
 from PySide6.QtWidgets import QApplication, QWidget, QToolButton, QVBoxLayout, QFrame, QLabel
 from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtGui import QGuiApplication, QIcon, QPixmap
@@ -7,6 +7,7 @@ from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QRect
 from PySide6.QtCore import Property
 from PySide6.QtGui import QPainter, QPainterPath
 from PySide6.QtCore import Qt, QEvent, QPoint, QTimer
+from PySide6.QtWidgets import QGraphicsOpacityEffect
 
 
 
@@ -29,6 +30,12 @@ AJUSTE_RECORTE_ARRIBA = 18  # prueba 12, 18, 24
 #========= Tamaño diagonal y velocidad===============
 DIAGONAL = 0.3
 VELOCIDAD = 1250
+
+
+#========= OPACIDAD ==================
+DURACION_OPACIDAD = 1200
+
+
 
 class PanelPintura(QLabel):
     def __init__(self, pixmap, parent=None):
@@ -102,6 +109,15 @@ class CalamarDesplegable(QWidget):
         # Botón círculo (después será el calamar)
         self.btn = QToolButton()
         self.btn.setFixedSize(PANEL_ANCHO, BOTON_ALTO)
+        # ===== Fade (opacidad) para el widget principal =====
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self.opacity_effect)
+
+        self.fade_anim = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_anim.setDuration(DURACION_OPACIDAD)  # ajusta velocidad (ms)
+        self.fade_anim.setEasingCurve(QEasingCurve.OutCubic)
+
         self.btn.setCursor(Qt.PointingHandCursor)
         self.btn.setToolTip("Pintura")
 
@@ -191,6 +207,46 @@ class CalamarDesplegable(QWidget):
 
 
 
+
+
+        # ===== Botón de regreso dentro del panel (último 25%) =====
+        self.btn_regresar = QToolButton(self.panel_frame)
+        self.btn_regresar.setCursor(Qt.PointingHandCursor)
+        self.btn_regresar.setStyleSheet("""
+            QToolButton { background: transparent; border: none; padding: 0px; margin: 0px; }
+        """)
+
+        # Recorte del último 25% usando EL MISMO pix del panel
+        recorte_y2 = int(pix.height() * 0.75) - AJUSTE_RECORTE_ARRIBA
+        if recorte_y2 < 0:
+            recorte_y2 = 0
+        recorte_h2 = pix.height() - recorte_y2
+        pix_boton2 = pix.copy(0, recorte_y2, pix.width(), recorte_h2)
+
+        # Ajustar al tamaño exacto del botón (igual que el de arriba)
+        pix_boton2 = pix_boton2.scaled(
+            PANEL_ANCHO, BOTON_ALTO,
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation
+        )
+
+
+        # Posición: último 25% del panel
+
+        alto_real = self.panel_img.height()
+        ancho_real = self.panel_img.width()
+        y_btn = alto_real - BOTON_ALTO
+
+        self.btn_regresar.setGeometry(0, y_btn, ancho_real, BOTON_ALTO)
+        self.btn_regresar.raise_()
+
+        self.btn_regresar.raise_()
+
+        # Al presionar: cerrar el panel (usa tu misma función)
+        self.btn_regresar.clicked.connect(self._toggle_panel)
+
+
+
         self.panel.hide()
 
         # ===== Animación del panel (despliegue tipo "pintura cae") =====
@@ -268,6 +324,19 @@ class CalamarDesplegable(QWidget):
 
         if self.panel.isVisible():
 
+            self.btn_regresar.hide()
+
+            self.show()
+            self._pegar_arriba_derecha()
+
+            # Fade-in del widget principal
+            self.fade_anim.stop()
+            self.opacity_effect.setOpacity(0.0)
+            self.fade_anim.setStartValue(0.0)
+            self.fade_anim.setEndValue(1.0)
+            self.fade_anim.start()
+
+
 
             progress_inicio = BOTON_ALTO / PANEL_ALTO
 
@@ -280,6 +349,7 @@ class CalamarDesplegable(QWidget):
             # Ocultar al final (si no, queda una tirita)
             def _ocultar_al_terminar():
                 self.panel.hide()
+
                 try:
                     self.anim.finished.disconnect(_ocultar_al_terminar)
                 except Exception:
@@ -294,18 +364,45 @@ class CalamarDesplegable(QWidget):
             # Abrir: mostrar primero en BOTON_ALTO y luego extender
             self.panel.show()
             self.panel.raise_()
+            self.btn_regresar.hide()
+
 
             # Asegura un primer frame estable ANTES de animar
             self.panel_img.progress = 0.0
             
-            # Ocultar el botón/ventana principal para que no quede detrás
-            self.hide()
+            # Fade-out del widget principal (para que no desaparezca de golpe)
+            self.fade_anim.stop()
+            self.opacity_effect.setOpacity(1.0)
+            self.fade_anim.setStartValue(1.0)
+            self.fade_anim.setEndValue(0.0)
+
+            def _ocultar_widget_al_terminar_fade():
+                self.hide()
+                try:
+                    self.fade_anim.finished.disconnect(_ocultar_widget_al_terminar_fade)
+                except Exception:
+                    pass
+
+            self.fade_anim.finished.connect(_ocultar_widget_al_terminar_fade)
+            self.fade_anim.start()
+
 
             self.anim.setStartValue(0.0)
             self.anim.setEndValue(1.0)
 
             # Arrancar en el siguiente ciclo del event loop (evita parpadeo)
             QTimer.singleShot(0, self.anim.start)
+
+
+            def _mostrar_boton_al_terminar():
+                self.btn_regresar.show()
+                self.btn_regresar.raise_()
+                try:
+                    self.anim.finished.disconnect(_mostrar_boton_al_terminar)
+                except Exception:
+                    pass
+
+            self.anim.finished.connect(_mostrar_boton_al_terminar)
 
 
 

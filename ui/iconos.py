@@ -76,7 +76,7 @@ class HoverTip(QLabel):
     def show_text(self, text: str, global_pos: QPoint, is_disabled: bool = False):
         # Colores según estado
         if is_disabled:
-            self.set_colors(QColor(0, 0, 0, 220), QColor(255, 59, 59))  # rojo
+            self.set_colors(QColor(0, 0, 0, 220), QColor(4, 217, 255))  # rojo
         else:
             self.set_colors(QColor(0, 0, 0, 220), QColor(255, 213, 74))  # amarillo
 
